@@ -8,8 +8,14 @@ description: |
   reproduccion online, caratulas automaticas y backend GStreamer.
 license: GPL-3.0-or-later
 icon: data/org.kampos.kamusic.svg
-website: https://kampos.info
-contact: mailto:kampos.info@gmail.com
+website:
+  - https://kampos.info
+contact:
+  - mailto:kampos.info@gmail.com
+source-code:
+  - https://github.com/kampos/KAMUSIC
+issues:
+  - https://github.com/kampos/KAMUSIC/issues
 
 grade: stable
 confinement: strict
