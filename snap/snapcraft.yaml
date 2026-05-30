@@ -1,6 +1,6 @@
 name: kamusic
 base: core26
-version: "0.1.13"
+version: "0.1.14"
 title: KAMUSIC
 summary: Reproductor de musica local
 description: |

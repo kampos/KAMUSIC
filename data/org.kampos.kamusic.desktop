@@ -2,8 +2,9 @@
 Type=Application
 Name=KAMUSIC
 Comment=Reproductor de musica local
-Exec=kamusic
+Exec=kamusic %U
 Icon=org.kampos.kamusic
 Terminal=false
 Categories=Audio;Music;Player;GTK;
+MimeType=audio/mpeg;audio/x-mpeg;audio/flac;audio/ogg;audio/opus;audio/wav;audio/x-wav;audio/mp4;audio/x-m4a;audio/aac;application/ogg;
 StartupNotify=true

@@ -8,6 +8,19 @@
   <url type="homepage">https://kampos.info</url>
   <url type="vcs-browser">https://github.com/kampos/KAMUSIC</url>
   <url type="bugtracker">https://github.com/kampos/KAMUSIC/issues</url>
+  <provides>
+    <mediatype>audio/mpeg</mediatype>
+    <mediatype>audio/x-mpeg</mediatype>
+    <mediatype>audio/flac</mediatype>
+    <mediatype>audio/ogg</mediatype>
+    <mediatype>audio/opus</mediatype>
+    <mediatype>audio/wav</mediatype>
+    <mediatype>audio/x-wav</mediatype>
+    <mediatype>audio/mp4</mediatype>
+    <mediatype>audio/x-m4a</mediatype>
+    <mediatype>audio/aac</mediatype>
+    <mediatype>application/ogg</mediatype>
+  </provides>
   <description>
     <p>KAMUSIC reproduce musica local organizada por carpetas, con busqueda, caratulas y controles basicos de reproduccion.</p>
   </description>

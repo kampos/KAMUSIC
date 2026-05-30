@@ -10,6 +10,7 @@ use gtk::{gio, glib};
 use crate::audio::player::Player;
 use crate::config::settings::Settings;
 use crate::library::database::LibraryDatabase;
+use crate::library::metadata::track_from_path;
 use crate::library::models::{Library, Track};
 use crate::library::online::{self, OnlineItem, OnlineKind};
 use crate::library::scanner;
@@ -36,6 +37,7 @@ struct UiState {
     selected_folder: Option<PathBuf>,
     search_token: u64,
     current_query: String,
+    current_track: Option<Track>,
     settings: Settings,
 }
 
@@ -46,7 +48,7 @@ pub struct MainWindow {
 }
 
 impl MainWindow {
-    pub fn new(app: &adw::Application) -> Self {
+    pub fn new(app: &adw::Application, initial_files: Vec<PathBuf>) -> Self {
         install_css();
 
         let settings_path = paths::config_file();
@@ -78,6 +80,7 @@ impl MainWindow {
             selected_folder: None,
             search_token: 0,
             current_query: String::new(),
+            current_track: None,
             settings,
         }));
         rebuild_visible_favorites(&state);
@@ -310,7 +313,7 @@ impl MainWindow {
         hero_actions.add_css_class("hero-actions");
         let hero_play_button = command_button("Reproducir", "play.svg");
         hero_play_button.add_css_class("suggested-action");
-        let hero_shuffle_button = command_button("Aleatorio", "media-playlist-shuffle-symbolic");
+        let hero_shuffle_button = command_button("Aleatorio", "shuffle.svg");
         hero_shuffle_button.add_css_class("secondary-action");
         hero_actions.append(&hero_play_button);
         hero_actions.append(&hero_shuffle_button);
@@ -1318,6 +1321,26 @@ impl MainWindow {
                     },
                 );
             }
+        }
+
+        if let Some(path) = initial_files.into_iter().find(|path| path.is_file()) {
+            open_initial_audio_file(
+                path,
+                &state,
+                &player,
+                &overlay,
+                &now_title,
+                &now_subtitle,
+                &cover,
+                &hero_media,
+                &hero_video,
+                &hero_kicker,
+                &hero_title,
+                &hero_subtitle,
+                &hero_meta,
+                &hero_cover,
+                &mpris,
+            );
         }
 
         Self { window }
@@ -2405,6 +2428,7 @@ fn play_online_item(
                     state.current_index = Some(index);
                     state.is_playing = true;
                     state.online_queue = state.visible_radio.clone();
+                    state.current_track = None;
                 }
                 now_title.set_label(&item.title);
                 now_subtitle.set_label(&item.subtitle);
@@ -2634,6 +2658,7 @@ fn play_queue_index(
                     let mut state = state.borrow_mut();
                     state.current_index = Some(index);
                     state.is_playing = true;
+                    state.current_track = Some(track.clone());
                 }
                 now_title.set_label(&track.title);
                 now_subtitle.set_label(&track.display_artist_album());
@@ -2650,6 +2675,69 @@ fn play_queue_index(
                 format!("No se pudo reproducir este archivo. {err}"),
             ),
         }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn open_initial_audio_file(
+    path: PathBuf,
+    state: &Rc<RefCell<UiState>>,
+    player: &Rc<Option<Player>>,
+    overlay: &adw::ToastOverlay,
+    now_title: &gtk::Label,
+    now_subtitle: &gtk::Label,
+    cover: &gtk::Image,
+    hero_media: &gtk::Stack,
+    hero_video: &gtk::Picture,
+    hero_kicker: &gtk::Label,
+    hero_title: &gtk::Label,
+    hero_subtitle: &gtk::Label,
+    hero_meta: &gtk::Label,
+    hero_cover: &gtk::Image,
+    mpris: &MprisControls,
+) {
+    let Some(track) = track_from_path(path) else {
+        show_toast(overlay, "No se pudo abrir el archivo de audio");
+        return;
+    };
+
+    let Some(player) = player.as_ref() else {
+        show_toast(overlay, "GStreamer no esta disponible");
+        return;
+    };
+
+    match player.play_file(&track.path) {
+        Ok(()) => {
+            {
+                let mut state = state.borrow_mut();
+                state.active_section = ActiveSection::Local;
+                state.current_index = None;
+                state.current_track = Some(track.clone());
+                state.is_playing = true;
+            }
+            hero_media.set_visible_child_name("cover");
+            hero_video.set_paintable(None::<&gtk::gdk::Paintable>);
+            hero_kicker.set_label("ARCHIVO ABIERTO");
+            hero_title.set_label(&track.title);
+            hero_subtitle.set_label(&track.display_artist_album());
+            hero_meta.set_label(&format_size(track.size));
+            now_title.set_label(&track.title);
+            now_subtitle.set_label(&track.display_artist_album());
+            if let Some(path) = &track.cover_path {
+                cover.set_from_file(Some(path));
+                hero_cover.set_from_file(Some(path));
+            } else {
+                set_app_cover(cover);
+                set_app_cover(hero_cover);
+                fetch_track_cover_async(track.clone(), cover.clone());
+                fetch_track_cover_async(track.clone(), hero_cover.clone());
+            }
+            mpris.set_playing(&track);
+        }
+        Err(err) => show_toast(
+            overlay,
+            format!("No se pudo reproducir este archivo. {err}"),
+        ),
     }
 }
 
@@ -2808,11 +2896,12 @@ fn request_play(
         let active_section = state.borrow().active_section;
         match active_section {
             ActiveSection::Local | ActiveSection::Favorites => {
-                let (current_index, queue, visible_tracks_empty) = {
+                let (current_index, queue, current_track, visible_tracks_empty) = {
                     let state_ref = state.borrow();
                     (
                         state_ref.current_index,
                         state_ref.queue.clone(),
+                        state_ref.current_track.clone(),
                         state_ref.visible_tracks.is_empty(),
                     )
                 };
@@ -2823,6 +2912,55 @@ fn request_play(
                     } else if let Some(track) = queue.get(index) {
                         state.borrow_mut().is_playing = true;
                         mpris.set_playing(track);
+                    }
+                } else if let Some(track) = current_track {
+                    match active_player.play() {
+                        Ok(()) => {
+                            state.borrow_mut().is_playing = true;
+                            now_title.set_label(&track.title);
+                            now_subtitle.set_label(&track.display_artist_album());
+                            if let Some(path) = &track.cover_path {
+                                cover.set_from_file(Some(path));
+                                hero_cover.set_from_file(Some(path));
+                            } else {
+                                set_app_cover(cover);
+                                set_app_cover(hero_cover);
+                                fetch_track_cover_async(track.clone(), cover.clone());
+                                fetch_track_cover_async(track.clone(), hero_cover.clone());
+                            }
+                            hero_media.set_visible_child_name("cover");
+                            hero_video.set_paintable(None::<&gtk::gdk::Paintable>);
+                            hero_kicker.set_label("ARCHIVO ABIERTO");
+                            hero_title.set_label(&track.title);
+                            hero_subtitle.set_label(&track.display_artist_album());
+                            hero_meta.set_label(&format_size(track.size));
+                            mpris.set_playing(&track);
+                        }
+                        Err(_) => {
+                            if let Err(err) = active_player.play_file(&track.path) {
+                                show_toast(overlay, format!("No se pudo continuar: {err}"));
+                            } else {
+                                state.borrow_mut().is_playing = true;
+                                now_title.set_label(&track.title);
+                                now_subtitle.set_label(&track.display_artist_album());
+                                if let Some(path) = &track.cover_path {
+                                    cover.set_from_file(Some(path));
+                                    hero_cover.set_from_file(Some(path));
+                                } else {
+                                    set_app_cover(cover);
+                                    set_app_cover(hero_cover);
+                                    fetch_track_cover_async(track.clone(), cover.clone());
+                                    fetch_track_cover_async(track.clone(), hero_cover.clone());
+                                }
+                                hero_media.set_visible_child_name("cover");
+                                hero_video.set_paintable(None::<&gtk::gdk::Paintable>);
+                                hero_kicker.set_label("ARCHIVO ABIERTO");
+                                hero_title.set_label(&track.title);
+                                hero_subtitle.set_label(&track.display_artist_album());
+                                hero_meta.set_label(&format_size(track.size));
+                                mpris.set_playing(&track);
+                            }
+                        }
                     }
                 } else if visible_tracks_empty {
                     show_toast(overlay, "Escanea una carpeta o selecciona una cancion");
