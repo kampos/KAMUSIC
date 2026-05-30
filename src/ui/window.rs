@@ -2975,6 +2975,7 @@ const APP_CSS: &str = r#"
 
 .sidebar-row-icon {
   opacity: 0.88;
+  color: rgba(245,247,251,0.88);
 }
 
 .sidebar-row-label {
@@ -3036,6 +3037,7 @@ const APP_CSS: &str = r#"
   min-height: 38px;
   border-radius: 999px;
   background: rgba(255,255,255,0.055);
+  color: rgba(245,247,251,0.92);
 }
 
 .favorite-button-inactive {
@@ -3050,6 +3052,7 @@ const APP_CSS: &str = r#"
   min-height: 42px;
   border-radius: 14px;
   background: rgba(255,255,255,0.055);
+  color: rgba(245,247,251,0.92);
 }
 
 .command-button.suggested-action {
@@ -3064,6 +3067,7 @@ const APP_CSS: &str = r#"
 
 .command-icon {
   opacity: 0.95;
+  color: rgba(245,247,251,0.95);
 }
 
 .command-label {
@@ -3232,6 +3236,7 @@ const APP_CSS: &str = r#"
   min-width: 40px;
   min-height: 40px;
   border-radius: 999px;
+  color: rgba(245,247,251,0.94);
 }
 
 .main-play {

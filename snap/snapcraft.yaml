@@ -39,12 +39,6 @@ apps:
       - x11
       - removable-media
 
-slots:
-  kamusic:
-    interface: dbus
-    bus: session
-    name: org.kampos.kamusic
-
 parts:
   kamusic:
     plugin: rust
