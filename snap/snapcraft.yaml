@@ -32,12 +32,9 @@ apps:
       - network
       - audio-playback
       - desktop
-      - desktop-legacy
       - gsettings
       - opengl
       - wayland
-      - x11
-      - removable-media
 
 parts:
   kamusic:
