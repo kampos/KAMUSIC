@@ -35,6 +35,7 @@ apps:
       - gsettings
       - opengl
       - wayland
+      - x11
 
 parts:
   kamusic:
