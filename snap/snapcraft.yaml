@@ -1,6 +1,6 @@
 name: kamusic
 base: core26
-version: "0.1.12"
+version: "0.1.13"
 title: KAMUSIC
 summary: Reproductor de musica local
 description: |
@@ -74,3 +74,7 @@ parts:
       install -Dm644 data/org.kampos.kamusic.desktop "$CRAFT_PART_INSTALL/usr/share/applications/org.kampos.kamusic.desktop"
       install -Dm644 data/org.kampos.kamusic.svg "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/scalable/apps/org.kampos.kamusic.svg"
       install -Dm644 data/org.kampos.kamusic.metainfo.xml "$CRAFT_PART_INSTALL/usr/share/metainfo/org.kampos.kamusic.metainfo.xml"
+      mkdir -p "$CRAFT_PART_INSTALL/usr/share/kamusic/icons"
+      for icon in data/icons/*.svg; do
+        install -Dm644 "$icon" "$CRAFT_PART_INSTALL/usr/share/kamusic/icons/$(basename "$icon")"
+      done

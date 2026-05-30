@@ -212,7 +212,7 @@ impl MainWindow {
         let playlist_label = gtk::Label::new(Some("PLAYLISTS"));
         playlist_label.set_xalign(0.0);
         playlist_label.add_css_class("section-kicker");
-        let add_playlist = icon_button("list-add-symbolic", "Crear playlist");
+        let add_playlist = icon_button("plus.svg", "Crear playlist");
         playlist_header.append(&playlist_label);
         playlist_header.append(&add_playlist);
         sidebar_stack.append(&playlist_header);
@@ -241,9 +241,9 @@ impl MainWindow {
         search.set_hexpand(true);
         toolbar.append(&search);
 
-        let scan_button = icon_button("view-refresh-symbolic", "Escanear musica");
-        let folder_button = icon_button("folder-open-symbolic", "Seleccionar carpeta");
-        let close_button = icon_button("window-close-symbolic", "Cerrar aplicacion");
+        let scan_button = icon_button("refresh.svg", "Escanear musica");
+        let folder_button = icon_button("folder-open.svg", "Seleccionar carpeta");
+        let close_button = icon_button("close.svg", "Cerrar aplicacion");
         toolbar.append(&scan_button);
         toolbar.append(&folder_button);
         toolbar.append(&close_button);
@@ -308,7 +308,7 @@ impl MainWindow {
 
         let hero_actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         hero_actions.add_css_class("hero-actions");
-        let hero_play_button = command_button("Reproducir", "media-playback-start-symbolic");
+        let hero_play_button = command_button("Reproducir", "play.svg");
         hero_play_button.add_css_class("suggested-action");
         let hero_shuffle_button = command_button("Aleatorio", "media-playlist-shuffle-symbolic");
         hero_shuffle_button.add_css_class("secondary-action");
@@ -395,11 +395,11 @@ impl MainWindow {
         let control_spacer_right = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         control_spacer_right.set_hexpand(true);
 
-        let prev_button = gtk::Button::from_icon_name("media-skip-backward-symbolic");
-        let play_button = gtk::Button::from_icon_name("media-playback-start-symbolic");
-        let pause_button = gtk::Button::from_icon_name("media-playback-pause-symbolic");
-        let stop_button = gtk::Button::from_icon_name("process-stop-symbolic");
-        let next_button = gtk::Button::from_icon_name("media-skip-forward-symbolic");
+        let prev_button = icon_button("skip-backward.svg", "Anterior");
+        let play_button = icon_button("play.svg", "Reproducir");
+        let pause_button = icon_button("pause.svg", "Pausar");
+        let stop_button = icon_button("stop.svg", "Detener");
+        let next_button = icon_button("skip-forward.svg", "Siguiente");
         for button in [
             &prev_button,
             &play_button,
@@ -1430,9 +1430,9 @@ fn render_sidebar(nav_list: &gtk::ListBox, folder_list: &gtk::ListBox, library: 
     clear_listbox(folder_list);
 
         for (label, icon) in [
-        ("Música local", "audio-x-generic-symbolic"),
-        ("Favoritos", "starred-symbolic"),
-        ("Radio online", "radio-symbolic"),
+        ("Música local", "music-note.svg"),
+        ("Favoritos", "star-filled.svg"),
+        ("Radio online", "radio.svg"),
     ] {
         nav_list.append(&sidebar_row(label, icon));
     }
@@ -1527,12 +1527,7 @@ fn render_tracks(
         row_box.append(&size);
 
         let row_actions = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        let favorite_button = icon_button("starred-symbolic", "Favorito");
-        if is_track_favorite(&track.path, state) {
-            favorite_button.add_css_class("favorite-button-active");
-        } else {
-            favorite_button.add_css_class("favorite-button-inactive");
-        }
+        let favorite_button = favorite_button(is_track_favorite(&track.path, state));
         {
             let state = Rc::clone(state);
             let settings_path = settings_path.clone();
@@ -1581,7 +1576,7 @@ fn sidebar_row(label: &str, icon: &str) -> gtk::ListBoxRow {
     let row_box = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     row_box.add_css_class("sidebar-row-inner");
     row_box.set_hexpand(true);
-    let image = gtk::Image::from_icon_name(icon);
+    let image = image_from_asset(icon, 18);
     image.add_css_class("sidebar-row-icon");
     let label = gtk::Label::new(Some(label));
     label.set_xalign(0.0);
@@ -1609,8 +1604,7 @@ fn playlist_row(label: &str, count: usize, index: usize) -> gtk::ListBoxRow {
         3 => "playlist-badge-blue",
         _ => "playlist-badge-gold",
     });
-    let badge_icon = gtk::Image::from_icon_name("folder-symbolic");
-    badge_icon.set_pixel_size(18);
+    let badge_icon = image_from_asset("folder.svg", 18);
     badge.append(&badge_icon);
     row_box.append(&badge);
 
@@ -1720,7 +1714,7 @@ fn open_music_folder_dialog(
 
 fn command_button(label: &str, icon: &str) -> gtk::Button {
     let content = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    let image = gtk::Image::from_icon_name(icon);
+    let image = image_from_asset(icon, 18);
     let label = gtk::Label::new(Some(label));
     image.add_css_class("command-icon");
     label.add_css_class("command-label");
@@ -1733,10 +1727,41 @@ fn command_button(label: &str, icon: &str) -> gtk::Button {
 }
 
 fn icon_button(icon: &str, tooltip: &str) -> gtk::Button {
-    let button = gtk::Button::from_icon_name(icon);
+    let button = gtk::Button::new();
+    button.set_child(Some(&image_from_asset(icon, 18)));
     button.set_tooltip_text(Some(tooltip));
     button.add_css_class("icon-button");
     button
+}
+
+fn favorite_button(active: bool) -> gtk::Button {
+    let button = gtk::Button::new();
+    let icon = if active {
+        "favorite-on.svg"
+    } else {
+        "favorite-off.svg"
+    };
+    button.set_child(Some(&image_from_asset(icon, 18)));
+    button.set_tooltip_text(Some("Favorito"));
+    button.add_css_class("icon-button");
+    if active {
+        button.add_css_class("favorite-button-active");
+    } else {
+        button.add_css_class("favorite-button-inactive");
+    }
+    button
+}
+
+fn image_from_asset(name: &str, pixel_size: i32) -> gtk::Image {
+    if let Some(path) = icon_asset_path(name) {
+        let image = gtk::Image::from_file(path);
+        image.set_pixel_size(pixel_size);
+        return image;
+    }
+
+    let image = gtk::Image::from_icon_name("image-missing-symbolic");
+    image.set_pixel_size(pixel_size);
+    image
 }
 
 fn app_cover_image() -> gtk::Image {
@@ -1785,6 +1810,21 @@ fn app_logo_image() -> gtk::Image {
     }
 
     gtk::Image::from_icon_name("org.kampos.kamusic")
+}
+
+fn icon_asset_path(name: &str) -> Option<PathBuf> {
+    let candidates = [
+        PathBuf::from("data/icons").join(name),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("data/icons")
+            .join(name),
+        std::env::var_os("SNAP")
+            .map(PathBuf::from)
+            .map(|snap| snap.join("usr/share/kamusic/icons").join(name))
+            .unwrap_or_default(),
+    ];
+
+    candidates.into_iter().find(|path| path.is_file())
 }
 
 fn file_path(file: &gio::File) -> Option<PathBuf> {
