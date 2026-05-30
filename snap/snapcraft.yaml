@@ -1,0 +1,78 @@
+name: kamusic
+base: core26
+version: "0.1.12"
+title: KAMUSIC
+summary: Reproductor de musica local
+description: |
+  KAMUSIC es un reproductor GTK4/Libadwaita con biblioteca local,
+  reproduccion online, caratulas automaticas y backend GStreamer.
+license: GPL-3.0-or-later
+icon: data/org.kampos.kamusic.svg
+website: https://kampos.info
+contact: mailto:kampos.info@gmail.com
+
+grade: stable
+confinement: strict
+
+apps:
+  kamusic:
+    command: bin/kamusic
+    command-chain:
+      - snap/command-chain/desktop-launch
+    desktop: usr/share/applications/org.kampos.kamusic.desktop
+    common-id: org.kampos.kamusic
+    plugs:
+      - home
+      - network
+      - audio-playback
+      - desktop
+      - desktop-legacy
+      - gsettings
+      - opengl
+      - wayland
+      - x11
+      - removable-media
+
+slots:
+  kamusic:
+    interface: dbus
+    bus: session
+    name: org.kampos.kamusic
+
+parts:
+  kamusic:
+    plugin: rust
+    source: .
+    build-packages:
+      - pkg-config
+      - libgtk-4-dev
+      - libadwaita-1-dev
+      - libgstreamer1.0-dev
+      - libgstreamer-plugins-base1.0-dev
+      - libglib2.0-bin
+    stage-packages:
+      - libgtk-4-1
+      - libadwaita-1-0
+      - libgstreamer1.0-0
+      - gstreamer1.0-plugins-base
+      - gstreamer1.0-plugins-good
+      - gstreamer1.0-plugins-bad
+      - gstreamer1.0-plugins-ugly
+      - libpulse0
+      - glib-networking
+      - glib-networking-services
+      - glib-networking-common
+      - libsoup-3.0-0
+      - libproxy1v5
+      - libcurl3t64-gnutls
+      - libsrt1.5-gnutls
+      - gsettings-desktop-schemas
+      - ca-certificates
+      - fontconfig
+      - hicolor-icon-theme
+    override-build: |
+      craftctl default
+      glib-compile-schemas "$CRAFT_PART_INSTALL/usr/share/glib-2.0/schemas"
+      install -Dm644 data/org.kampos.kamusic.desktop "$CRAFT_PART_INSTALL/usr/share/applications/org.kampos.kamusic.desktop"
+      install -Dm644 data/org.kampos.kamusic.svg "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/scalable/apps/org.kampos.kamusic.svg"
+      install -Dm644 data/org.kampos.kamusic.metainfo.xml "$CRAFT_PART_INSTALL/usr/share/metainfo/org.kampos.kamusic.metainfo.xml"

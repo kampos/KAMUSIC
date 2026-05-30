@@ -1,0 +1,11 @@
+/target
+/.kamusic
+/.agents
+/.codex
+/.craft
+/parts
+/stage
+/prime
+/overlay
+/kamusic_*.snap
+/*.log

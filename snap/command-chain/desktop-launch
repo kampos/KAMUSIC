@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+export GTK_USE_PORTAL=1
+export FONTCONFIG_FILE="${SNAP}/etc/fonts/fonts.conf"
+export FONTCONFIG_PATH="${SNAP}/etc/fonts"
+export GSETTINGS_SCHEMA_DIR="${SNAP}/usr/share/glib-2.0/schemas"
+export XDG_DATA_DIRS="${SNAP}/usr/share:/usr/share${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+export LD_LIBRARY_PATH="${SNAP}/usr/lib/x86_64-linux-gnu/pulseaudio:${SNAP}/usr/lib:${SNAP}/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+exec "$@"

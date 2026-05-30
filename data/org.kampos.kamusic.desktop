@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=KAMUSIC
+Comment=Reproductor de musica local
+Exec=kamusic
+Icon=org.kampos.kamusic
+Terminal=false
+Categories=Audio;Music;Player;GTK;
+StartupNotify=true

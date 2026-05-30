@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.kampos.kamusic</id>
+  <name>KAMUSIC</name>
+  <summary>Reproductor de musica local para GNOME</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <url type="homepage">https://kampos.info</url>
+  <description>
+    <p>KAMUSIC reproduce musica local organizada por carpetas, con busqueda, caratulas y controles basicos de reproduccion.</p>
+  </description>
+  <launchable type="desktop-id">org.kampos.kamusic.desktop</launchable>
+</component>
