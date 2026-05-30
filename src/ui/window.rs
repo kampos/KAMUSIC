@@ -212,7 +212,7 @@ impl MainWindow {
         let playlist_label = gtk::Label::new(Some("PLAYLISTS"));
         playlist_label.set_xalign(0.0);
         playlist_label.add_css_class("section-kicker");
-        let add_playlist = icon_button("plus-symbolic", "Crear playlist");
+        let add_playlist = icon_button("list-add-symbolic", "Crear playlist");
         playlist_header.append(&playlist_label);
         playlist_header.append(&add_playlist);
         sidebar_stack.append(&playlist_header);
@@ -1527,7 +1527,7 @@ fn render_tracks(
         row_box.append(&size);
 
         let row_actions = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        let favorite_button = icon_button("emblem-favorite-symbolic", "Favorito");
+        let favorite_button = icon_button("starred-symbolic", "Favorito");
         if is_track_favorite(&track.path, state) {
             favorite_button.add_css_class("favorite-button-active");
         } else {
