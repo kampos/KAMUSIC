@@ -1,108 +1,59 @@
-# Continuation Notes
+# Registro de Continuacion - KAMUSIC
 
-Last updated: 2026-05-29
+Fecha: 2026-06-10 12:55 CEST
 
-## Current State
+## Estado Actual
+- La reproduccion continua esta implementada para la cola local/favoritos y para la cola online/radio.
+- Al terminar una pista, GStreamer emite EOS, la UI recibe `PlayerEvent::EndOfStream` y reutiliza `play_next_active`.
+- Si no hay siguiente elemento, la app detiene el reproductor, marca `is_playing = false`, limpia `current_index` y actualiza MPRIS como detenido.
+- Snap generado y publicado en Ubuntu Store:
+  - Archivo local: `kamusic_0.1.30_amd64.snap`
+  - Tamano: 217 MB
+  - Canal: `stable`
+  - Revision Store: 27
+  - Mensaje de Snapcraft: `Revision 27 created for 'kamusic' and released to 'stable'`
 
-KAMUSIC is compiling and the current snap build is at `0.1.11`.
+## Cambios Realizados
+1. `src/audio/player.rs`
+   - Se anadio `PlayerEvent`.
+   - Se anadio `Player::new_with_events(Sender<PlayerEvent>)`.
+   - Se retiro el constructor sin eventos porque ya no se usa.
 
-Current identifiers:
+2. `src/audio/gst_backend.rs`
+   - `GstBackend::new` ahora acepta `Option<Sender<PlayerEvent>>`.
+   - El `BusWatchGuard` envia `PlayerEvent::EndOfStream` al recibir `MessageView::Eos`.
 
-- Visible name: `KAMUSIC`
-- Cargo package / binary: `kamusic`
-- App ID: `org.kampos.kamusic`
-- Snap name: `kamusic`
+3. `src/ui/window.rs`
+   - Se crea un canal `mpsc` para eventos del reproductor.
+   - La ventana crea el reproductor con `Player::new_with_events`.
+   - Se anadio un `glib::timeout_add_local` cada 120 ms para consumir eventos del reproductor en el hilo GTK.
+   - EOS llama a `play_next_active`, igual que el boton Siguiente y MPRIS Next.
+   - `play_next_active` comprueba si existe siguiente elemento antes de reproducir.
+   - Se anadio `finish_playback` para cerrar correctamente el fin de cola.
 
-## What Is Implemented
+4. `snap/snapcraft.yaml`
+   - Version del snap actualizada de `0.1.29` a `0.1.30`.
 
-- GTK4 + Libadwaita main window with the redesigned layout.
-- Left navigation with:
-  - `Música local`
-  - `Música en YouTube`
-  - `Radio online`
-- Playlist column now opens a folder picker from:
-  - the top folder button
-  - the `+` button in `PLAYLISTS`
-- Local music scan:
-  - recursive folder scan
-  - supported audio extensions: `mp3`, `flac`, `ogg`, `opus`, `wav`, `m4a`, `aac`
-  - background scan so the UI does not block
-  - default folder detection now prefers `SNAP_REAL_HOME`, then `HOME`, then `/home/kampos/Música`
-- Library model:
-  - tracks stored with path, folder, title, album, extension, size, modified time, and cover path
-  - search across title, artist, album, folder, and file path
-- Local persistence:
-  - JSON settings in XDG config
-  - SQLite index in XDG data
-- Playback:
-  - GStreamer `playbin`
-  - play, pause, stop, next, previous
-  - volume control
-- Online playback:
-  - YouTube search via Invidious search API
-  - YouTube playback now resolves the stream URL through Invidious `/api/v1/videos/:id`
-  - radio preset list for typical Spanish stations
-- Cover art:
-  - local folder art detection (`cover.jpg`, `folder.png`, etc.)
-  - app icon and fallback cover use `data/org.kampos.kamusic.svg`
-  - YouTube thumbnails and radio favicons are cached locally
-- Snap packaging:
-  - `snap/snapcraft.yaml`
-  - `command-chain/desktop-launch`
-  - compiled GSettings schemas staged into the snap
-  - `dbus` session slot for `org.kampos.kamusic`
+## Verificaciones Realizadas
+- `cargo fmt --check`: correcto.
+- `cargo check`: correcto.
+- `snapcraft`: correcto, genero `kamusic_0.1.30_amd64.snap`.
+- `snapcraft whoami`: sesion activa como `kampos.info@gmail.com` con permisos de push/release.
+- `snapcraft upload --release=stable kamusic_0.1.30_amd64.snap`: correcto, revision 27 publicada en `stable`.
 
-## Important Files
+## Avisos Observados
+- `cargo check` deja warnings no bloqueantes de codigo no usado:
+  - `audio_sink` y `video_sink` en `GstBackend`.
+  - `video_paintable` en backend/player.
+- Snapcraft dejo warnings de linters sobre librerias GPU y librerias no usadas. No bloquearon el paquete ni la publicacion.
+- `snap info kamusic` se quedo colgado al consultar la Store tras publicar. Se termino el proceso colgado; la publicacion ya estaba confirmada por `snapcraft upload`.
 
-- App entry: [src/main.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/main.rs)
-- App bootstrap: [src/app.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/app.rs)
-- Main UI: [src/ui/window.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/ui/window.rs)
-- Audio backend: [src/audio/player.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/audio/player.rs)
-- GStreamer backend: [src/audio/gst_backend.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/audio/gst_backend.rs)
-- MPRIS bridge: [src/mpris.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/mpris.rs)
-- Scanner: [src/library/scanner.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/library/scanner.rs)
-- Metadata helpers: [src/library/metadata.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/library/metadata.rs)
-- Cover helpers: [src/library/cover.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/library/cover.rs)
-- Online backend: [src/library/online.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/library/online.rs)
-- Storage: [src/library/database.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/library/database.rs)
-- Settings paths: [src/util/paths.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/util/paths.rs)
-- Toast escaping: [src/util/errors.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/util/errors.rs)
-- Snap config: [snap/snapcraft.yaml](/home/kampos/Desarrollo_Software/KAMUSIC/snap/snapcraft.yaml)
-- Snap launcher: [snap/command-chain/desktop-launch](/home/kampos/Desarrollo_Software/KAMUSIC/snap/command-chain/desktop-launch)
-
-## Verified Commands
-
-- `CARGO_HOME=/tmp/cargo cargo check`
-- `CARGO_HOME=/tmp/cargo cargo build --release`
-- `glib-compile-schemas prime/usr/share/glib-2.0/schemas`
-- `snap pack prime /tmp --filename=kamusic_0.1.11_amd64.snap`
-- `snap info /tmp/kamusic_0.1.11_amd64.snap`
-
-## Runtime Notes
-
-- The installed snap revision in the user machine can still lag behind the freshly built artifact.
-- Current snap artifacts present in the repo root:
-  - `kamusic_0.1.11_amd64.snap`
-  - older revisions from `0.1.0` through `0.1.10`
-- In the snap environment, the following warnings were seen repeatedly:
-  - `Gdk-WARNING ... ListActivatableNames ... AccessDenied`
-  - `GLib-GIO-WARNING ... /proc/self/mountinfo: Permission denied`
-- The app is now set up to avoid the earlier GSettings abort by shipping compiled schemas.
-- YouTube playback previously failed because `rustube` broke against the current YouTube response; the current code no longer depends on it.
-
-## Known Gaps / Next Work
-
-- We still need a real end-to-end test of YouTube playback inside the current snap revision `0.1.11`.
-- The scan/index pipeline still uses a simple full refresh instead of incremental diffs.
-- Track duration, progress bar, and seek support are not fully implemented.
-- The queue UI is still basic and not exposed as a dedicated panel.
-- Embedded cover-art extraction from audio tags is not implemented yet.
-- Radio selection works, but the information panel can still be refined further.
-
-## Safe Next Steps
-
-1. Install and run `kamusic_0.1.11_amd64.snap` and verify YouTube playback with a known working video.
-2. Confirm the local library still scans `~/Música` automatically inside the snap.
-3. If YouTube still fails, inspect the exact `stream_url` returned by Invidious and whether GStreamer accepts it.
-4. Add seek/progress updates from GStreamer bus and expose the timeline in the player bar.
-5. Improve metadata extraction and embedded cover-art support.
+## Puntos de Continuacion
+1. Probar desde Store en una maquina limpia: `sudo snap install kamusic`.
+2. Validar reproduccion continua en:
+   - Biblioteca local completa.
+   - Carpeta/playlist seleccionada desde la barra lateral.
+   - Favoritos.
+   - Radio/online, si aplica.
+3. Considerar limpiar warnings de `video_paintable` si ya no se usa o reconectarlo si la vista de video sigue siendo necesaria.
+4. Revisar los warnings de Snapcraft si se quiere reducir tamano del snap o ajustar soporte GPU con content interfaces.

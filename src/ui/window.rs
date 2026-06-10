@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::mpsc;
@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use adw::prelude::*;
 use gtk::{gio, glib};
 
-use crate::audio::player::Player;
+use crate::audio::player::{Player, PlayerEvent};
 use crate::config::settings::Settings;
 use crate::library::database::LibraryDatabase;
 use crate::library::metadata::track_from_path;
@@ -24,6 +24,13 @@ enum ActiveSection {
     Radio,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PlaybackControl {
+    Play,
+    Pause,
+    Stop,
+}
+
 struct UiState {
     library: Library,
     visible_tracks: Vec<Track>,
@@ -38,6 +45,7 @@ struct UiState {
     search_token: u64,
     current_query: String,
     current_track: Option<Track>,
+    active_control: PlaybackControl,
     settings: Settings,
 }
 
@@ -59,16 +67,23 @@ impl MainWindow {
             .as_ref()
             .and_then(|db| db.load().ok())
             .unwrap_or_default();
-        let player = Rc::new(Player::new().ok());
+        let (player_event_tx, player_event_rx) = mpsc::channel();
+        let player = Rc::new(Player::new_with_events(player_event_tx).ok());
         if let Some(player) = player.as_ref() {
             player.set_volume(settings.volume);
         }
         let mpris = MprisControls::default();
-        let initial_width = settings.window_width.filter(|value| *value > 0).unwrap_or(1360);
-        let initial_height = settings.window_height.filter(|value| *value > 0).unwrap_or(860);
+        let initial_width = settings
+            .window_width
+            .filter(|value| *value > 0)
+            .unwrap_or(1360);
+        let initial_height = settings
+            .window_height
+            .filter(|value| *value > 0)
+            .unwrap_or(860);
 
         let state = Rc::new(RefCell::new(UiState {
-            visible_tracks: library.tracks.clone(),
+            visible_tracks: Vec::new(),
             visible_favorites: Vec::new(),
             visible_radio: Vec::new(),
             library,
@@ -81,8 +96,10 @@ impl MainWindow {
             search_token: 0,
             current_query: String::new(),
             current_track: None,
+            active_control: PlaybackControl::Stop,
             settings,
         }));
+        rebuild_visible_local_tracks(&state);
         rebuild_visible_favorites(&state);
 
         let window = adw::ApplicationWindow::builder()
@@ -93,9 +110,21 @@ impl MainWindow {
             .build();
 
         let overlay = adw::ToastOverlay::new();
+        let root = gtk::Overlay::new();
+        let background = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        background.add_css_class("app-shell");
+        background.set_hexpand(true);
+        background.set_vexpand(true);
         let shell = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        shell.add_css_class("app-shell");
-        overlay.set_child(Some(&shell));
+        shell.set_hexpand(true);
+        shell.set_vexpand(true);
+        shell.set_margin_top(12);
+        shell.set_margin_bottom(12);
+        shell.set_margin_start(12);
+        shell.set_margin_end(12);
+        root.set_child(Some(&background));
+        root.add_overlay(&shell);
+        overlay.set_child(Some(&root));
         window.set_content(Some(&overlay));
 
         {
@@ -121,32 +150,11 @@ impl MainWindow {
             });
         }
 
-        let drag_click = gtk::GestureClick::new();
+        let drag_click = gtk::GestureDrag::new();
         drag_click.set_button(0);
         {
             let window = window.clone();
-            let shell_for_drag = shell.clone();
-            drag_click.connect_pressed(move |gesture, _n_press, x, y| {
-                if gesture.current_button() != 1 {
-                    return;
-                }
-
-                let Some(picked) = shell_for_drag.pick(x, y, gtk::PickFlags::DEFAULT) else {
-                    return;
-                };
-
-                if picked.is::<gtk::Button>()
-                    || picked.is::<gtk::SearchEntry>()
-                    || picked.is::<gtk::Entry>()
-                    || picked.is::<gtk::ListBox>()
-                    || picked.is::<gtk::ListBoxRow>()
-                    || picked.is::<gtk::Label>()
-                    || picked.is::<gtk::Image>()
-                    || picked.is::<gtk::Picture>()
-                {
-                    return;
-                }
-
+            drag_click.connect_drag_begin(move |gesture, start_x, start_y| {
                 let device = match gesture.current_event_device() {
                     Some(device) => device,
                     None => return,
@@ -162,10 +170,10 @@ impl MainWindow {
                     return;
                 };
 
-                toplevel.begin_move(&device, 1, x, y, timestamp);
+                toplevel.begin_move(&device, 1, start_x, start_y, timestamp);
             });
         }
-        shell.add_controller(drag_click);
+        background.add_controller(drag_click);
 
         let body = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         body.add_css_class("workspace");
@@ -391,6 +399,16 @@ impl MainWindow {
         player_left.append(&now_box);
         player_bar.append(&player_left);
 
+        let transport_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        transport_box.add_css_class("transport-box");
+        transport_box.set_hexpand(true);
+
+        let progress = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 1.0, 1.0);
+        progress.set_draw_value(false);
+        progress.set_sensitive(false);
+        progress.add_css_class("song-progress");
+        transport_box.append(&progress);
+
         let player_controls = gtk::Box::new(gtk::Orientation::Horizontal, 10);
         player_controls.add_css_class("player-controls");
         let control_spacer_left = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -414,8 +432,10 @@ impl MainWindow {
             player_controls.append(button);
         }
         play_button.add_css_class("main-play");
+        player_controls.set_halign(gtk::Align::Center);
+        transport_box.append(&player_controls);
         player_bar.append(&control_spacer_left);
-        player_bar.append(&player_controls);
+        player_bar.append(&transport_box);
         player_bar.append(&control_spacer_right);
 
         let volume = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 1.0, 0.01);
@@ -427,7 +447,100 @@ impl MainWindow {
         player_bar.append(&player_right);
         shell.append(&player_bar);
 
-        render_sidebar(&nav_list, &folder_list, &state.borrow().library);
+        {
+            let state = Rc::clone(&state);
+            let nav_list = nav_list.clone();
+            let folder_list_for_key = folder_list.clone();
+            let track_list = track_list.clone();
+            let search = search.clone();
+            let hero_media = hero_media.clone();
+            let hero_kicker = hero_kicker.clone();
+            let hero_title = hero_title.clone();
+            let hero_subtitle = hero_subtitle.clone();
+            let hero_meta = hero_meta.clone();
+            let hero_cover = hero_cover.clone();
+            let status_label = status_label.clone();
+            let stat_number = stat_number.clone();
+            let overlay = overlay.clone();
+            let settings_path = settings_path.clone();
+            let key_controller = gtk::EventControllerKey::new();
+            key_controller.connect_key_pressed(move |_, key, _, _| {
+                if key == gtk::gdk::Key::Delete {
+                    delete_selected_playlist(
+                        &state,
+                        &nav_list,
+                        &folder_list_for_key,
+                        &track_list,
+                        &search,
+                        &hero_media,
+                        &hero_kicker,
+                        &hero_title,
+                        &hero_subtitle,
+                        &hero_meta,
+                        &hero_cover,
+                        &status_label,
+                        &stat_number,
+                        &overlay,
+                        &settings_path,
+                    );
+                    return glib::Propagation::Stop;
+                }
+
+                glib::Propagation::Proceed
+            });
+            folder_list.add_controller(key_controller);
+        }
+
+        {
+            let state = Rc::clone(&state);
+            let nav_list = nav_list.clone();
+            let folder_list_for_gesture = folder_list.clone();
+            let track_list = track_list.clone();
+            let search = search.clone();
+            let hero_media = hero_media.clone();
+            let hero_kicker = hero_kicker.clone();
+            let hero_title = hero_title.clone();
+            let hero_subtitle = hero_subtitle.clone();
+            let hero_meta = hero_meta.clone();
+            let hero_cover = hero_cover.clone();
+            let status_label = status_label.clone();
+            let stat_number = stat_number.clone();
+            let overlay = overlay.clone();
+            let settings_path = settings_path.clone();
+            let gesture = gtk::GestureClick::new();
+            gesture.set_button(3);
+            gesture.connect_pressed(move |_gesture, _n_press, _x, y| {
+                let Some(row) = folder_list_for_gesture.row_at_y(y as i32) else {
+                    return;
+                };
+                folder_list_for_gesture.select_row(Some(&row));
+                delete_selected_playlist(
+                    &state,
+                    &nav_list,
+                    &folder_list_for_gesture,
+                    &track_list,
+                    &search,
+                    &hero_media,
+                    &hero_kicker,
+                    &hero_title,
+                    &hero_subtitle,
+                    &hero_meta,
+                    &hero_cover,
+                    &status_label,
+                    &stat_number,
+                    &overlay,
+                    &settings_path,
+                );
+            });
+            folder_list.add_controller(gesture);
+        }
+
+        {
+            let state_ref = state.borrow();
+            let library = state_ref.library.clone();
+            let hidden_folders = state_ref.settings.hidden_folders.clone();
+            render_sidebar(&nav_list, &folder_list, &library, &hidden_folders);
+        }
         render_tracks(
             &track_list,
             &state.borrow().visible_tracks,
@@ -509,9 +622,13 @@ impl MainWindow {
                 let active_section = state.borrow().active_section;
                 match active_section {
                     ActiveSection::Local => {
-                        let library = state.borrow().library.clone();
-                        let tracks = library.search(&query);
-                        state.borrow_mut().visible_tracks = tracks.clone();
+                        {
+                            let mut state_mut = state.borrow_mut();
+                            let library = state_mut.library.clone();
+                            let hidden_folders = state_mut.settings.hidden_folders.clone();
+                            state_mut.visible_tracks =
+                                search_visible_local_tracks(&library, &hidden_folders, &query);
+                        }
                         refresh_current_view(
                             &state,
                             &track_list,
@@ -527,7 +644,10 @@ impl MainWindow {
                             &overlay_for_search,
                             &settings_path_for_search,
                         );
-                        status_label.set_label(&format!("{} canciones encontradas", tracks.len()));
+                        status_label.set_label(&format!(
+                            "{} canciones encontradas",
+                            state.borrow().visible_tracks.len()
+                        ));
                     }
                     ActiveSection::Favorites => {
                         rebuild_visible_favorites(&state);
@@ -715,6 +835,7 @@ impl MainWindow {
             let hero_meta_for_folder = hero_meta.clone();
             let hero_cover_for_folder = hero_cover.clone();
             let hero_media_for_folder = hero_media.clone();
+            let hero_video_for_folder = hero_video.clone();
             let status_label = status_label.clone();
             let stat_number = stat_number.clone();
             let search = search.clone();
@@ -727,7 +848,8 @@ impl MainWindow {
             let mpris_for_folder = mpris.clone();
             folder_list.connect_row_activated(move |_list, row| {
                 let index = row.index();
-                let folders = state.borrow().library.folders();
+                let hidden_folders = state.borrow().settings.hidden_folders.clone();
+                let folders = visible_folders(&state.borrow().library, &hidden_folders);
                 if folders.is_empty() {
                     return;
                 }
@@ -766,6 +888,13 @@ impl MainWindow {
                         &now_title_for_folder,
                         &now_subtitle_for_folder,
                         &cover_for_folder,
+                        &hero_media_for_folder,
+                        &hero_video_for_folder,
+                        &hero_kicker_for_folder,
+                        &hero_title_for_folder,
+                        &hero_subtitle_for_folder,
+                        &hero_meta_for_folder,
+                        &hero_cover_for_folder,
                         &mpris_for_folder,
                     );
                 }
@@ -798,6 +927,13 @@ impl MainWindow {
                         &now_title,
                         &now_subtitle,
                         &cover,
+                        &hero_media_for_track,
+                        &hero_video_for_track,
+                        &hero_kicker,
+                        &hero_title,
+                        &hero_subtitle,
+                        &hero_meta,
+                        &hero_cover,
                         &mpris,
                     ),
                     ActiveSection::Radio => {
@@ -898,6 +1034,91 @@ impl MainWindow {
         }
 
         {
+            let state = Rc::clone(&state);
+            let player = Rc::clone(&player);
+            let overlay = overlay.clone();
+            let now_title = now_title.clone();
+            let now_subtitle = now_subtitle.clone();
+            let cover = cover.clone();
+            let hero_kicker = hero_kicker.clone();
+            let hero_title = hero_title.clone();
+            let hero_subtitle = hero_subtitle.clone();
+            let hero_meta = hero_meta.clone();
+            let hero_cover = hero_cover.clone();
+            let hero_media = hero_media.clone();
+            let hero_video = hero_video.clone();
+            let mpris = mpris.clone();
+            glib::timeout_add_local(Duration::from_millis(120), move || {
+                loop {
+                    match player_event_rx.try_recv() {
+                        Ok(PlayerEvent::EndOfStream) => {
+                            play_next_active(
+                                &state,
+                                &player,
+                                &overlay,
+                                &now_title,
+                                &now_subtitle,
+                                &cover,
+                                &hero_media,
+                                &hero_video,
+                                &hero_kicker,
+                                &hero_title,
+                                &hero_subtitle,
+                                &hero_meta,
+                                &hero_cover,
+                                &mpris,
+                            );
+                        }
+                        Err(mpsc::TryRecvError::Empty) => break,
+                        Err(mpsc::TryRecvError::Disconnected) => {
+                            return glib::ControlFlow::Break;
+                        }
+                    }
+                }
+                glib::ControlFlow::Continue
+            });
+        }
+
+        let progress_is_updating = Rc::new(Cell::new(false));
+        {
+            let player = Rc::clone(&player);
+            let progress_is_updating = Rc::clone(&progress_is_updating);
+            progress.connect_change_value(move |_, _, value| {
+                if progress_is_updating.get() {
+                    return glib::Propagation::Proceed;
+                }
+                if let Some(player) = player.as_ref() {
+                    let _ = player.seek(Duration::from_secs_f64(value.max(0.0)));
+                }
+                glib::Propagation::Proceed
+            });
+        }
+
+        {
+            let state = Rc::clone(&state);
+            let player = Rc::clone(&player);
+            let progress = progress.clone();
+            let play_button = play_button.clone();
+            let pause_button = pause_button.clone();
+            let stop_button = stop_button.clone();
+            let progress_is_updating = Rc::clone(&progress_is_updating);
+            glib::timeout_add_local(Duration::from_millis(250), move || {
+                update_transport_controls(
+                    state.borrow().active_control,
+                    &play_button,
+                    &pause_button,
+                    &stop_button,
+                );
+
+                progress_is_updating.set(true);
+                update_progress_scale(&progress, player.as_ref().as_ref());
+                progress_is_updating.set(false);
+
+                glib::ControlFlow::Continue
+            });
+        }
+
+        {
             let player = Rc::clone(&player);
             let overlay = overlay.clone();
             let state = Rc::clone(&state);
@@ -974,6 +1195,13 @@ impl MainWindow {
             let now_title = now_title.clone();
             let now_subtitle = now_subtitle.clone();
             let cover = cover.clone();
+            let hero_kicker = hero_kicker.clone();
+            let hero_title = hero_title.clone();
+            let hero_subtitle = hero_subtitle.clone();
+            let hero_meta = hero_meta.clone();
+            let hero_cover = hero_cover.clone();
+            let hero_media = hero_media.clone();
+            let hero_video = hero_video.clone();
             let mpris = mpris.clone();
             hero_shuffle_button.connect_clicked(move |_| {
                 play_random_visible_index(
@@ -983,6 +1211,13 @@ impl MainWindow {
                     &now_title,
                     &now_subtitle,
                     &cover,
+                    &hero_media,
+                    &hero_video,
+                    &hero_kicker,
+                    &hero_title,
+                    &hero_subtitle,
+                    &hero_meta,
+                    &hero_cover,
                     &mpris,
                 );
             });
@@ -1415,10 +1650,15 @@ fn start_scan(
             }
             {
                 let mut state = state.borrow_mut();
-                state.visible_tracks = library.tracks.clone();
                 state.library = library;
             }
-            render_sidebar(&nav_list, &folder_list, &state.borrow().library);
+            rebuild_visible_local_tracks(&state);
+            {
+                let state_ref = state.borrow();
+                let library = state_ref.library.clone();
+                let hidden_folders = state_ref.settings.hidden_folders.clone();
+                render_sidebar(&nav_list, &folder_list, &library, &hidden_folders);
+            }
             refresh_current_view(
                 &state,
                 &track_list,
@@ -1448,11 +1688,16 @@ fn start_scan(
     });
 }
 
-fn render_sidebar(nav_list: &gtk::ListBox, folder_list: &gtk::ListBox, library: &Library) {
+fn render_sidebar(
+    nav_list: &gtk::ListBox,
+    folder_list: &gtk::ListBox,
+    library: &Library,
+    hidden_folders: &[PathBuf],
+) {
     clear_listbox(nav_list);
     clear_listbox(folder_list);
 
-        for (label, icon) in [
+    for (label, icon) in [
         ("Música local", "music-note.svg"),
         ("Favoritos", "star-filled.svg"),
         ("Radio online", "radio.svg"),
@@ -1460,7 +1705,7 @@ fn render_sidebar(nav_list: &gtk::ListBox, folder_list: &gtk::ListBox, library: 
         nav_list.append(&sidebar_row(label, icon));
     }
 
-    let folders = library.folders();
+    let folders = visible_folders(library, hidden_folders);
     if folders.is_empty() {
         folder_list.append(&empty_playlist_row());
         return;
@@ -1803,6 +2048,71 @@ fn set_app_cover(image: &gtk::Image) {
     }
 }
 
+fn update_transport_controls(
+    active: PlaybackControl,
+    play_button: &gtk::Button,
+    pause_button: &gtk::Button,
+    stop_button: &gtk::Button,
+) {
+    for button in [play_button, pause_button, stop_button] {
+        button.remove_css_class("active-control");
+    }
+
+    match active {
+        PlaybackControl::Play => play_button.add_css_class("active-control"),
+        PlaybackControl::Pause => pause_button.add_css_class("active-control"),
+        PlaybackControl::Stop => stop_button.add_css_class("active-control"),
+    }
+}
+
+fn update_progress_scale(progress: &gtk::Scale, player: Option<&Player>) {
+    let Some(player) = player else {
+        progress.set_sensitive(false);
+        progress.set_range(0.0, 1.0);
+        progress.set_value(0.0);
+        return;
+    };
+
+    let duration = player.duration().map(|duration| duration.as_secs_f64());
+    let position = player.position().map(|position| position.as_secs_f64());
+    match (duration, position) {
+        (Some(duration), Some(position)) if duration.is_finite() && duration > 0.0 => {
+            progress.set_sensitive(true);
+            progress.set_range(0.0, duration);
+            progress.set_value(position.clamp(0.0, duration));
+        }
+        _ => {
+            progress.set_sensitive(false);
+            progress.set_range(0.0, 1.0);
+            progress.set_value(0.0);
+        }
+    }
+}
+
+fn update_local_featured_for_track(
+    track: &Track,
+    hero_media: &gtk::Stack,
+    hero_video: &gtk::Picture,
+    hero_kicker: &gtk::Label,
+    hero_title: &gtk::Label,
+    hero_subtitle: &gtk::Label,
+    hero_meta: &gtk::Label,
+    hero_cover: &gtk::Image,
+) {
+    hero_media.set_visible_child_name("cover");
+    hero_video.set_paintable(None::<&gtk::gdk::Paintable>);
+    hero_kicker.set_label("REPRODUCIENDO");
+    hero_title.set_label(&track.title);
+    hero_subtitle.set_label(&track.display_artist_album());
+    hero_meta.set_label(&format_size(track.size));
+    if let Some(path) = &track.cover_path {
+        hero_cover.set_from_file(Some(path));
+    } else {
+        set_app_cover(hero_cover);
+        fetch_track_cover_async(track.clone(), hero_cover.clone());
+    }
+}
+
 fn app_cover_path() -> Option<PathBuf> {
     let candidates = [
         PathBuf::from("data/org.kampos.kamusic.svg"),
@@ -1901,12 +2211,19 @@ fn set_active_section(
         state.active_section = section;
         state.current_index = None;
         state.is_playing = false;
+        state.active_control = PlaybackControl::Stop;
     }
 
     match section {
         ActiveSection::Local => {
-            let tracks = state.borrow().visible_tracks.clone();
-            state.borrow_mut().visible_tracks = tracks.clone();
+            {
+                let mut state_mut = state.borrow_mut();
+                let library = state_mut.library.clone();
+                let hidden_folders = state_mut.settings.hidden_folders.clone();
+                let current_query = state_mut.current_query.clone();
+                state_mut.visible_tracks =
+                    search_visible_local_tracks(&library, &hidden_folders, &current_query);
+            }
             search.set_placeholder_text(Some("Buscar canciones, artistas, albumes..."));
             refresh_current_view(
                 state,
@@ -2041,11 +2358,7 @@ fn is_track_favorite(path: &PathBuf, state: &Rc<RefCell<UiState>>) -> bool {
         .any(|favorite| favorite == path)
 }
 
-fn toggle_favorite_track(
-    state: &Rc<RefCell<UiState>>,
-    settings_path: &PathBuf,
-    path: &PathBuf,
-) {
+fn toggle_favorite_track(state: &Rc<RefCell<UiState>>, settings_path: &PathBuf, path: &PathBuf) {
     {
         let mut state = state.borrow_mut();
         let favorites = &mut state.settings.favorite_tracks;
@@ -2102,6 +2415,150 @@ fn filter_favorites(library: &Library, favorites: &[PathBuf], query: &str) -> Ve
         })
         .cloned()
         .collect()
+}
+
+fn folder_is_hidden(folder: &PathBuf, hidden_folders: &[PathBuf]) -> bool {
+    hidden_folders.iter().any(|hidden| hidden == folder)
+}
+
+fn visible_folders(library: &Library, hidden_folders: &[PathBuf]) -> Vec<PathBuf> {
+    library
+        .folders()
+        .into_iter()
+        .filter(|folder| !folder_is_hidden(folder, hidden_folders))
+        .collect()
+}
+
+fn visible_local_tracks(library: &Library, hidden_folders: &[PathBuf]) -> Vec<Track> {
+    library
+        .tracks
+        .iter()
+        .filter(|track| !folder_is_hidden(&track.folder, hidden_folders))
+        .cloned()
+        .collect()
+}
+
+fn search_visible_local_tracks(
+    library: &Library,
+    hidden_folders: &[PathBuf],
+    query: &str,
+) -> Vec<Track> {
+    let needle = query.trim();
+    let tracks = if needle.is_empty() {
+        visible_local_tracks(library, hidden_folders)
+    } else {
+        library.search(needle)
+    };
+
+    tracks
+        .into_iter()
+        .filter(|track| !folder_is_hidden(&track.folder, hidden_folders))
+        .collect()
+}
+
+fn count_unique_folders(tracks: &[Track]) -> usize {
+    let mut folders = tracks
+        .iter()
+        .map(|track| track.folder.clone())
+        .collect::<Vec<_>>();
+    folders.sort();
+    folders.dedup();
+    folders.len()
+}
+
+fn rebuild_visible_local_tracks(state: &Rc<RefCell<UiState>>) {
+    let mut state_mut = state.borrow_mut();
+    let hidden_folders = state_mut.settings.hidden_folders.clone();
+    let query = state_mut.current_query.clone();
+    state_mut.visible_tracks =
+        search_visible_local_tracks(&state_mut.library, &hidden_folders, &query);
+}
+
+fn delete_selected_playlist(
+    state: &Rc<RefCell<UiState>>,
+    nav_list: &gtk::ListBox,
+    folder_list: &gtk::ListBox,
+    track_list: &gtk::ListBox,
+    search: &gtk::SearchEntry,
+    hero_media: &gtk::Stack,
+    hero_kicker: &gtk::Label,
+    hero_title: &gtk::Label,
+    hero_subtitle: &gtk::Label,
+    hero_meta: &gtk::Label,
+    hero_cover: &gtk::Image,
+    status_label: &gtk::Label,
+    stat_number: &gtk::Label,
+    overlay: &adw::ToastOverlay,
+    settings_path: &PathBuf,
+) {
+    let index = folder_list
+        .selected_row()
+        .map(|row| row.index())
+        .unwrap_or(-1);
+    if index < 0 {
+        return;
+    }
+
+    let folder = {
+        let state_ref = state.borrow();
+        let folders = visible_folders(&state_ref.library, &state_ref.settings.hidden_folders);
+        folders.get(index as usize).cloned()
+    };
+
+    let Some(folder) = folder else {
+        return;
+    };
+
+    let folder_name = folder
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_else(|| folder.to_str().unwrap_or("Carpeta"))
+        .to_string();
+
+    {
+        let mut state_mut = state.borrow_mut();
+        let library = state_mut.library.clone();
+        if !state_mut
+            .settings
+            .hidden_folders
+            .iter()
+            .any(|hidden| hidden == &folder)
+        {
+            state_mut.settings.hidden_folders.push(folder.clone());
+        }
+        state_mut.selected_folder = None;
+        state_mut.current_index = None;
+        let hidden_folders = state_mut.settings.hidden_folders.clone();
+        let current_query = state_mut.current_query.clone();
+        state_mut.visible_tracks =
+            search_visible_local_tracks(&library, &hidden_folders, &current_query);
+        let _ = state_mut.settings.save(settings_path);
+    }
+
+    let (library, hidden_folders) = {
+        let state_ref = state.borrow();
+        (
+            state_ref.library.clone(),
+            state_ref.settings.hidden_folders.clone(),
+        )
+    };
+    render_sidebar(nav_list, folder_list, &library, &hidden_folders);
+    refresh_current_view(
+        state,
+        track_list,
+        search,
+        hero_media,
+        hero_kicker,
+        hero_title,
+        hero_subtitle,
+        hero_meta,
+        hero_cover,
+        status_label,
+        stat_number,
+        overlay,
+        settings_path,
+    );
+    show_toast(overlay, format!("Playlist eliminada: {folder_name}"));
 }
 
 fn refresh_current_view(
@@ -2258,8 +2715,7 @@ fn refresh_featured_panel(
         ActiveSection::Local | ActiveSection::Favorites => {
             hero_media.set_visible_child_name("cover");
             hero_kicker.set_label("MUSICA LOCAL");
-            let featured = tracks.first().or_else(|| library.tracks.first());
-            if let Some(track) = featured {
+            if let Some(track) = tracks.first() {
                 hero_title.set_label(
                     track
                         .album
@@ -2275,7 +2731,7 @@ fn refresh_featured_panel(
                 hero_meta.set_label(&format!(
                     "{} canciones · {} carpetas · {}",
                     tracks.len(),
-                    library.folders().len(),
+                    count_unique_folders(tracks),
                     root
                 ));
                 if let Some(path) = &track.cover_path {
@@ -2354,6 +2810,7 @@ fn format_size(size: u64) -> String {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn play_visible_index(
     index: usize,
     state: &Rc<RefCell<UiState>>,
@@ -2362,6 +2819,13 @@ fn play_visible_index(
     now_title: &gtk::Label,
     now_subtitle: &gtk::Label,
     cover: &gtk::Image,
+    hero_media: &gtk::Stack,
+    hero_video: &gtk::Picture,
+    hero_kicker: &gtk::Label,
+    hero_title: &gtk::Label,
+    hero_subtitle: &gtk::Label,
+    hero_meta: &gtk::Label,
+    hero_cover: &gtk::Image,
     mpris: &MprisControls,
 ) {
     {
@@ -2376,6 +2840,13 @@ fn play_visible_index(
         now_title,
         now_subtitle,
         cover,
+        hero_media,
+        hero_video,
+        hero_kicker,
+        hero_title,
+        hero_subtitle,
+        hero_meta,
+        hero_cover,
         mpris,
     );
 
@@ -2429,6 +2900,7 @@ fn play_online_item(
                     state.is_playing = true;
                     state.online_queue = state.visible_radio.clone();
                     state.current_track = None;
+                    state.active_control = PlaybackControl::Play;
                 }
                 now_title.set_label(&item.title);
                 now_subtitle.set_label(&item.subtitle);
@@ -2488,9 +2960,9 @@ fn fetch_radio_cover_async(item: OnlineItem, image: gtk::Image) {
 
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let result = online::http_client().ok().and_then(|client| {
-            online::download_thumbnail(&client, &favicon_url, "radio")
-        });
+        let result = online::http_client()
+            .ok()
+            .and_then(|client| online::download_thumbnail(&client, &favicon_url, "radio"));
         let _ = tx.send(result);
     });
 
@@ -2563,6 +3035,7 @@ fn start_online_search(
                                 state.online_queue = items.clone();
                                 state.current_index = None;
                                 state.is_playing = false;
+                                state.active_control = PlaybackControl::Stop;
                             }
                             render_online_items(&track_list, &items);
                             stat_number.set_label(&items.len().to_string());
@@ -2604,6 +3077,7 @@ fn start_online_search(
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn play_random_visible_index(
     state: &Rc<RefCell<UiState>>,
     player: &Rc<Option<Player>>,
@@ -2611,6 +3085,13 @@ fn play_random_visible_index(
     now_title: &gtk::Label,
     now_subtitle: &gtk::Label,
     cover: &gtk::Image,
+    hero_media: &gtk::Stack,
+    hero_video: &gtk::Picture,
+    hero_kicker: &gtk::Label,
+    hero_title: &gtk::Label,
+    hero_subtitle: &gtk::Label,
+    hero_meta: &gtk::Label,
+    hero_cover: &gtk::Image,
     mpris: &MprisControls,
 ) {
     let len = state.borrow().visible_tracks.len();
@@ -2632,10 +3113,18 @@ fn play_random_visible_index(
         now_title,
         now_subtitle,
         cover,
+        hero_media,
+        hero_video,
+        hero_kicker,
+        hero_title,
+        hero_subtitle,
+        hero_meta,
+        hero_cover,
         mpris,
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn play_queue_index(
     index: usize,
     state: &Rc<RefCell<UiState>>,
@@ -2644,6 +3133,13 @@ fn play_queue_index(
     now_title: &gtk::Label,
     now_subtitle: &gtk::Label,
     cover: &gtk::Image,
+    hero_media: &gtk::Stack,
+    hero_video: &gtk::Picture,
+    hero_kicker: &gtk::Label,
+    hero_title: &gtk::Label,
+    hero_subtitle: &gtk::Label,
+    hero_meta: &gtk::Label,
+    hero_cover: &gtk::Image,
     mpris: &MprisControls,
 ) {
     let Some(player) = player.as_ref() else {
@@ -2659,6 +3155,7 @@ fn play_queue_index(
                     state.current_index = Some(index);
                     state.is_playing = true;
                     state.current_track = Some(track.clone());
+                    state.active_control = PlaybackControl::Play;
                 }
                 now_title.set_label(&track.title);
                 now_subtitle.set_label(&track.display_artist_album());
@@ -2668,6 +3165,16 @@ fn play_queue_index(
                     set_app_cover(cover);
                     fetch_track_cover_async(track.clone(), cover.clone());
                 }
+                update_local_featured_for_track(
+                    &track,
+                    hero_media,
+                    hero_video,
+                    hero_kicker,
+                    hero_title,
+                    hero_subtitle,
+                    hero_meta,
+                    hero_cover,
+                );
                 mpris.set_playing(&track);
             }
             Err(err) => show_toast(
@@ -2714,6 +3221,7 @@ fn open_initial_audio_file(
                 state.current_index = None;
                 state.current_track = Some(track.clone());
                 state.is_playing = true;
+                state.active_control = PlaybackControl::Play;
             }
             hero_media.set_visible_child_name("cover");
             hero_video.set_paintable(None::<&gtk::gdk::Paintable>);
@@ -2760,21 +3268,35 @@ fn play_next_active(
     let active_section = state.borrow().active_section;
     match active_section {
         ActiveSection::Local | ActiveSection::Favorites => {
-            let next = state
-                .borrow()
-                .current_index
-                .map(|idx| idx.saturating_add(1))
-                .unwrap_or(0);
-            play_queue_index(
-                next,
-                state,
-                player,
-                overlay,
-                now_title,
-                now_subtitle,
-                cover,
-                mpris,
-            );
+            let (next, has_next) = {
+                let state = state.borrow();
+                let next = state
+                    .current_index
+                    .map(|idx| idx.saturating_add(1))
+                    .unwrap_or(0);
+                (next, state.queue.get(next).is_some())
+            };
+            if has_next {
+                play_queue_index(
+                    next,
+                    state,
+                    player,
+                    overlay,
+                    now_title,
+                    now_subtitle,
+                    cover,
+                    hero_media,
+                    hero_video,
+                    hero_kicker,
+                    hero_title,
+                    hero_subtitle,
+                    hero_meta,
+                    hero_cover,
+                    mpris,
+                );
+            } else {
+                finish_playback(state, player, overlay, mpris);
+            }
         }
         ActiveSection::Radio => {
             let next = state
@@ -2802,10 +3324,30 @@ fn play_next_active(
                     mpris,
                 );
             } else {
-                show_toast(overlay, "No hay elementos para reproducir");
+                finish_playback(state, player, overlay, mpris);
             }
         }
     }
+}
+
+fn finish_playback(
+    state: &Rc<RefCell<UiState>>,
+    player: &Rc<Option<Player>>,
+    overlay: &adw::ToastOverlay,
+    mpris: &MprisControls,
+) {
+    if let Some(player) = player.as_ref() {
+        if let Err(err) = player.stop() {
+            show_toast(overlay, format!("No se pudo detener: {err}"));
+        }
+    }
+    {
+        let mut state = state.borrow_mut();
+        state.is_playing = false;
+        state.current_index = None;
+        state.active_control = PlaybackControl::Stop;
+    }
+    mpris.set_stopped();
 }
 
 fn play_previous_active(
@@ -2840,6 +3382,13 @@ fn play_previous_active(
                 now_title,
                 now_subtitle,
                 cover,
+                hero_media,
+                hero_video,
+                hero_kicker,
+                hero_title,
+                hero_subtitle,
+                hero_meta,
+                hero_cover,
                 mpris,
             );
         }
@@ -2910,13 +3459,31 @@ fn request_play(
                     if let Err(err) = active_player.play() {
                         show_toast(overlay, format!("No se pudo continuar: {err}"));
                     } else if let Some(track) = queue.get(index) {
-                        state.borrow_mut().is_playing = true;
+                        {
+                            let mut state = state.borrow_mut();
+                            state.is_playing = true;
+                            state.active_control = PlaybackControl::Play;
+                        }
+                        update_local_featured_for_track(
+                            track,
+                            hero_media,
+                            hero_video,
+                            hero_kicker,
+                            hero_title,
+                            hero_subtitle,
+                            hero_meta,
+                            hero_cover,
+                        );
                         mpris.set_playing(track);
                     }
                 } else if let Some(track) = current_track {
                     match active_player.play() {
                         Ok(()) => {
-                            state.borrow_mut().is_playing = true;
+                            {
+                                let mut state = state.borrow_mut();
+                                state.is_playing = true;
+                                state.active_control = PlaybackControl::Play;
+                            }
                             now_title.set_label(&track.title);
                             now_subtitle.set_label(&track.display_artist_album());
                             if let Some(path) = &track.cover_path {
@@ -2928,19 +3495,27 @@ fn request_play(
                                 fetch_track_cover_async(track.clone(), cover.clone());
                                 fetch_track_cover_async(track.clone(), hero_cover.clone());
                             }
-                            hero_media.set_visible_child_name("cover");
-                            hero_video.set_paintable(None::<&gtk::gdk::Paintable>);
-                            hero_kicker.set_label("ARCHIVO ABIERTO");
-                            hero_title.set_label(&track.title);
-                            hero_subtitle.set_label(&track.display_artist_album());
-                            hero_meta.set_label(&format_size(track.size));
+                            update_local_featured_for_track(
+                                &track,
+                                hero_media,
+                                hero_video,
+                                hero_kicker,
+                                hero_title,
+                                hero_subtitle,
+                                hero_meta,
+                                hero_cover,
+                            );
                             mpris.set_playing(&track);
                         }
                         Err(_) => {
                             if let Err(err) = active_player.play_file(&track.path) {
                                 show_toast(overlay, format!("No se pudo continuar: {err}"));
                             } else {
-                                state.borrow_mut().is_playing = true;
+                                {
+                                    let mut state = state.borrow_mut();
+                                    state.is_playing = true;
+                                    state.active_control = PlaybackControl::Play;
+                                }
                                 now_title.set_label(&track.title);
                                 now_subtitle.set_label(&track.display_artist_album());
                                 if let Some(path) = &track.cover_path {
@@ -2952,12 +3527,16 @@ fn request_play(
                                     fetch_track_cover_async(track.clone(), cover.clone());
                                     fetch_track_cover_async(track.clone(), hero_cover.clone());
                                 }
-                                hero_media.set_visible_child_name("cover");
-                                hero_video.set_paintable(None::<&gtk::gdk::Paintable>);
-                                hero_kicker.set_label("ARCHIVO ABIERTO");
-                                hero_title.set_label(&track.title);
-                                hero_subtitle.set_label(&track.display_artist_album());
-                                hero_meta.set_label(&format_size(track.size));
+                                update_local_featured_for_track(
+                                    &track,
+                                    hero_media,
+                                    hero_video,
+                                    hero_kicker,
+                                    hero_title,
+                                    hero_subtitle,
+                                    hero_meta,
+                                    hero_cover,
+                                );
                                 mpris.set_playing(&track);
                             }
                         }
@@ -2973,23 +3552,41 @@ fn request_play(
                         now_title,
                         now_subtitle,
                         cover,
+                        hero_media,
+                        hero_video,
+                        hero_kicker,
+                        hero_title,
+                        hero_subtitle,
+                        hero_meta,
+                        hero_cover,
                         mpris,
                     );
                 }
             }
             ActiveSection::Radio => {
-                let (current_index, online_queue) = {
+                let active_radio = {
                     let state_ref = state.borrow();
-                    (state_ref.current_index, state_ref.online_queue.clone())
+                    state_ref
+                        .current_index
+                        .and_then(|index| state_ref.online_queue.get(index))
+                        .cloned()
                 };
 
-                if let Some(index) = current_index {
-                    if let Err(err) = active_player.play() {
-                        show_toast(overlay, format!("No se pudo continuar: {err}"));
-                    } else if let Some(item) = online_queue.get(index) {
-                        state.borrow_mut().is_playing = true;
-                        now_title.set_label(&item.title);
-                        now_subtitle.set_label(&item.subtitle);
+                if let Some(item) = active_radio {
+                    match &item.kind {
+                        OnlineKind::Radio { stream_url } => {
+                            if let Err(err) = active_player.play_uri(stream_url) {
+                                show_toast(overlay, format!("No se pudo continuar: {err}"));
+                            } else {
+                                {
+                                    let mut state = state.borrow_mut();
+                                    state.is_playing = true;
+                                    state.active_control = PlaybackControl::Play;
+                                }
+                                now_title.set_label(&item.title);
+                                now_subtitle.set_label(&item.subtitle);
+                            }
+                        }
                     }
                 } else {
                     if let Some(item) = online_item_at(state, 0) {
@@ -3032,7 +3629,11 @@ fn request_pause(
         if let Err(err) = player.pause() {
             show_toast(overlay, format!("No se pudo pausar: {err}"));
         } else {
-            state.borrow_mut().is_playing = false;
+            {
+                let mut state = state.borrow_mut();
+                state.is_playing = false;
+                state.active_control = PlaybackControl::Pause;
+            }
             mpris.set_paused();
         }
     } else {
@@ -3054,6 +3655,7 @@ fn request_stop(
                 let mut state = state.borrow_mut();
                 state.is_playing = false;
                 state.current_index = None;
+                state.active_control = PlaybackControl::Stop;
             }
             mpris.set_stopped();
         }
@@ -3410,6 +4012,14 @@ const APP_CSS: &str = r#"
   padding: 0 12px;
 }
 
+.transport-box {
+  min-width: 280px;
+}
+
+.song-progress {
+  min-height: 18px;
+}
+
 .player-control {
   min-width: 40px;
   min-height: 40px;
@@ -3418,6 +4028,10 @@ const APP_CSS: &str = r#"
 }
 
 .main-play {
+  color: #ffffff;
+}
+
+.active-control {
   background: linear-gradient(135deg, #8f63ff, #6a4df0);
   color: #ffffff;
 }

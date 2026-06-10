@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 
 pub fn config_file() -> PathBuf {
-    writable_dir("config")
-        .join("settings.json")
+    writable_dir("config").join("settings.json")
 }
 
 pub fn database_file() -> PathBuf {

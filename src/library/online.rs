@@ -22,7 +22,6 @@ pub struct OnlineItem {
 #[derive(Clone, Debug, Deserialize)]
 struct RadioStation {
     name: String,
-    url_resolved: String,
     favicon: Option<String>,
     country: Option<String>,
     tags: Option<String>,
@@ -33,48 +32,59 @@ struct RadioStation {
 struct RadioPreset {
     name: &'static str,
     query: &'static str,
+    stream_url: &'static str,
 }
 
 const RADIO_PRESETS: &[RadioPreset] = &[
     RadioPreset {
         name: "LOS 40",
         query: "LOS 40",
+        stream_url: "https://playerservices.streamtheworld.com/api/livestream-redirect/Los40.mp3",
     },
     RadioPreset {
         name: "Cadena SER",
         query: "Cadena SER",
+        stream_url: "https://playerservices.streamtheworld.com/api/livestream-redirect/CADENASER.mp3",
     },
     RadioPreset {
         name: "Cadena 100",
         query: "Cadena 100",
+        stream_url: "http://cadena100-streamers-mp3.flumotion.com/cope/cadena100.mp3",
     },
     RadioPreset {
         name: "COPE",
         query: "COPE",
+        stream_url: "https://wecast-bl01.flumotion.com/copesedes/lacoruna.mp3",
     },
     RadioPreset {
         name: "Europa FM",
         query: "Europa FM",
+        stream_url: "https://stream.zeno.fm/se76qau1hc9uv",
     },
     RadioPreset {
         name: "Onda Cero",
         query: "Onda Cero",
+        stream_url: "https://atres-live.ondacero.es/live/ondacero/bitrate_1.m3u8",
     },
     RadioPreset {
         name: "Kiss FM",
         query: "Kiss FM",
+        stream_url: "https://bbkissfm.kissfmradio.cires21.com/bbkissfm.mp3",
     },
     RadioPreset {
         name: "LOS 40 Classic",
         query: "LOS 40 Classic",
+        stream_url: "https://22543.live.streamtheworld.com/LOS40_CLASSIC.mp3",
     },
     RadioPreset {
         name: "Rock FM",
         query: "Rock FM",
+        stream_url: "https://rockfm-cope-rrcast.flumotion.com/cope/rockfm-low.mp3",
     },
     RadioPreset {
         name: "Radiolé",
         query: "Radiolé",
+        stream_url: "https://playerservices.streamtheworld.com/api/livestream-redirect/RADIOLE.mp3",
     },
 ];
 
@@ -147,7 +157,7 @@ fn fetch_radio_station(
         cover_path,
         favicon_url: station.favicon.clone(),
         kind: OnlineKind::Radio {
-            stream_url: station.url_resolved,
+            stream_url: preset.stream_url.to_string(),
         },
     })
 }
