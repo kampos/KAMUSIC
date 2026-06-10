@@ -1,7 +1,14 @@
 use std::path::Path;
+use std::sync::mpsc::Sender;
+use std::time::Duration;
 
 #[cfg(feature = "gst")]
 use crate::audio::gst_backend::GstBackend;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlayerEvent {
+    EndOfStream,
+}
 
 #[cfg(feature = "gst")]
 pub struct Player {
@@ -13,14 +20,14 @@ pub struct Player;
 
 impl Player {
     #[cfg(feature = "gst")]
-    pub fn new() -> anyhow::Result<Self> {
+    pub fn new_with_events(event_sender: Sender<PlayerEvent>) -> anyhow::Result<Self> {
         Ok(Self {
-            backend: GstBackend::new()?,
+            backend: GstBackend::new(Some(event_sender))?,
         })
     }
 
     #[cfg(not(feature = "gst"))]
-    pub fn new() -> anyhow::Result<Self> {
+    pub fn new_with_events(_event_sender: Sender<PlayerEvent>) -> anyhow::Result<Self> {
         Ok(Self)
     }
 
@@ -85,6 +92,36 @@ impl Player {
 
     #[cfg(not(feature = "gst"))]
     pub fn set_volume(&self, _volume: f64) {}
+
+    #[cfg(feature = "gst")]
+    pub fn position(&self) -> Option<Duration> {
+        self.backend.position()
+    }
+
+    #[cfg(not(feature = "gst"))]
+    pub fn position(&self) -> Option<Duration> {
+        None
+    }
+
+    #[cfg(feature = "gst")]
+    pub fn duration(&self) -> Option<Duration> {
+        self.backend.duration()
+    }
+
+    #[cfg(not(feature = "gst"))]
+    pub fn duration(&self) -> Option<Duration> {
+        None
+    }
+
+    #[cfg(feature = "gst")]
+    pub fn seek(&self, position: Duration) -> anyhow::Result<()> {
+        self.backend.seek(position)
+    }
+
+    #[cfg(not(feature = "gst"))]
+    pub fn seek(&self, _position: Duration) -> anyhow::Result<()> {
+        anyhow::bail!("compilado sin soporte GStreamer")
+    }
 
     #[cfg(feature = "gst")]
     pub fn video_paintable(&self) -> Option<gtk::gdk::Paintable> {
