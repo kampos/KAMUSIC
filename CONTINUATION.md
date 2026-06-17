@@ -1,5 +1,40 @@
 # Registro de Continuacion - KAMUSIC
 
+Fecha: 2026-06-17 15:45 CEST
+
+## Estado Actual
+- Preparada version `0.1.35` para evitar la revision manual causada por el slot D-Bus generico.
+- Snap local generado: `kamusic_0.1.35_amd64.snap`.
+- Revision Store creada: 32.
+- Estado de la revision 32: sin canal, bloqueada hasta que se resuelva la revision manual anterior.
+- Canal `stable` actual: `0.1.33`, revision 30.
+- Se retiro el slot:
+  - `interface: dbus`
+  - `name: org.kampos.kamusic`
+- Se declaro el slot MPRIS especifico:
+  - `interface: mpris`
+  - `name: kamusic`
+
+## Motivo
+- El codigo MPRIS usa `org.mpris.MediaPlayer2.kamusic`, no una API D-Bus propia bajo `org.kampos.kamusic`.
+- `org.kampos.kamusic` se usa como ID GTK/appstream/desktop, no como servicio D-Bus funcional propio.
+- El slot `dbus-kamusic` provoco revision manual en Snapcraft para la revision 31 (`0.1.34`).
+
+## Puntos de Continuacion
+1. Entrar en el dashboard de Snapcraft y rechazar/quitar de la cola la revision 31 (`0.1.34`) si se quiere priorizar la 32.
+2. Cuando la revision 32 este aprobada, publicar con:
+   - `snapcraft release kamusic 32 stable`
+3. Confirmar despues con:
+   - `snapcraft status kamusic`
+   - `snap info kamusic`
+
+## Resultado de Publicacion
+- `snapcraft upload kamusic_0.1.35_amd64.snap --release=stable`: subio la revision 32, pero no la publico.
+- Mensaje de Snapcraft: `Waiting for previous upload(s) to complete their review process`.
+- `snapcraft release kamusic 32 stable`: fallo con `resource-not-ready: Revision 32 is not approved`.
+
+---
+
 Fecha: 2026-06-17 15:35 CEST
 
 ## Estado Actual
