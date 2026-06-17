@@ -9,7 +9,9 @@ pub struct Settings {
     pub volume: f64,
     pub window_width: Option<i32>,
     pub window_height: Option<i32>,
+    pub compact_mode: bool,
     pub favorite_tracks: Vec<PathBuf>,
+    pub hidden_folders: Vec<PathBuf>,
 }
 
 impl Default for Settings {
@@ -19,7 +21,9 @@ impl Default for Settings {
             volume: 0.8,
             window_width: None,
             window_height: None,
+            compact_mode: false,
             favorite_tracks: Vec::new(),
+            hidden_folders: Vec::new(),
         }
     }
 }

@@ -1,108 +1,159 @@
-# Continuation Notes
+# Registro de Continuacion - KAMUSIC
 
-Last updated: 2026-05-29
+Fecha: 2026-06-17 15:35 CEST
 
-## Current State
+## Estado Actual
+- Snap local generado y subido: `kamusic_0.1.34_amd64.snap`.
+- Revision Store creada: 31.
+- Estado de la revision 31: pendiente de revision manual en Snapcraft.
+- Canal `stable` actual: `0.1.33`, revision 30.
+- Motivo indicado por Snapcraft: `human review required due to 'deny-connection' constraint (interface attributes)`.
+- Intento de release manual: `snapcraft release kamusic 31 stable`.
+- Resultado del release manual: `resource-not-ready: Revision 31 is not approved`.
+- Metadata de tienda actualizada desde `kamusic_0.1.34_amd64.snap` con `snapcraft upload-metadata --force`.
 
-KAMUSIC is compiling and the current snap build is at `0.1.11`.
+## Verificaciones Realizadas
+- `snapcraft upload kamusic_0.1.34_amd64.snap --release=stable`: subio la revision 31, pero quedo retenida para revision manual.
+- `snapcraft revisions kamusic`: confirma `0.1.34` como revision 31 sin canal.
+- `snapcraft status kamusic`: confirma `stable` en `0.1.33`, revision 30.
+- `cargo check`: correcto, con warnings no bloqueantes existentes sobre `audio_sink`, `video_sink` y `video_paintable`.
+- `git diff --check`: correcto despues de retirar un espacio sobrante en `src/app.rs`.
 
-Current identifiers:
+## Puntos de Continuacion
+1. Revisar en el dashboard de Snapcraft la revision 31 y aprobar/resolver la revision manual.
+2. Cuando este aprobada, publicar con:
+   - `snapcraft release kamusic 31 stable`
+3. Confirmar despues con:
+   - `snapcraft status kamusic`
+   - `snap info kamusic`
 
-- Visible name: `KAMUSIC`
-- Cargo package / binary: `kamusic`
-- App ID: `org.kampos.kamusic`
-- Snap name: `kamusic`
+---
 
-## What Is Implemented
+Fecha: 2026-06-11 13:14 CEST
 
-- GTK4 + Libadwaita main window with the redesigned layout.
-- Left navigation with:
-  - `Música local`
-  - `Música en YouTube`
-  - `Radio online`
-- Playlist column now opens a folder picker from:
-  - the top folder button
-  - the `+` button in `PLAYLISTS`
-- Local music scan:
-  - recursive folder scan
-  - supported audio extensions: `mp3`, `flac`, `ogg`, `opus`, `wav`, `m4a`, `aac`
-  - background scan so the UI does not block
-  - default folder detection now prefers `SNAP_REAL_HOME`, then `HOME`, then `/home/kampos/Música`
-- Library model:
-  - tracks stored with path, folder, title, album, extension, size, modified time, and cover path
-  - search across title, artist, album, folder, and file path
-- Local persistence:
-  - JSON settings in XDG config
-  - SQLite index in XDG data
-- Playback:
-  - GStreamer `playbin`
-  - play, pause, stop, next, previous
-  - volume control
-- Online playback:
-  - YouTube search via Invidious search API
-  - YouTube playback now resolves the stream URL through Invidious `/api/v1/videos/:id`
-  - radio preset list for typical Spanish stations
-- Cover art:
-  - local folder art detection (`cover.jpg`, `folder.png`, etc.)
-  - app icon and fallback cover use `data/org.kampos.kamusic.svg`
-  - YouTube thumbnails and radio favicons are cached locally
-- Snap packaging:
-  - `snap/snapcraft.yaml`
-  - `command-chain/desktop-launch`
-  - compiled GSettings schemas staged into the snap
-  - `dbus` session slot for `org.kampos.kamusic`
+## Estado Actual
+- Implementado y publicado el modo compacto del reproductor.
+- Version actual publicada en Ubuntu Store: `0.1.33`.
+- Snap local generado: `kamusic_0.1.33_amd64.snap`.
+- Canal publicado: `stable`.
+- Revision Store actual: 30.
+- Mensaje de Snapcraft: `Revision 30 created for 'kamusic' and released to 'stable'`.
 
-## Important Files
+## Cambios Realizados
+1. `src/config/settings.rs`
+   - Se anadio `compact_mode` a `Settings`.
+   - El estado compacto se guarda y se restaura al abrir la app.
 
-- App entry: [src/main.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/main.rs)
-- App bootstrap: [src/app.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/app.rs)
-- Main UI: [src/ui/window.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/ui/window.rs)
-- Audio backend: [src/audio/player.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/audio/player.rs)
-- GStreamer backend: [src/audio/gst_backend.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/audio/gst_backend.rs)
-- MPRIS bridge: [src/mpris.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/mpris.rs)
-- Scanner: [src/library/scanner.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/library/scanner.rs)
-- Metadata helpers: [src/library/metadata.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/library/metadata.rs)
-- Cover helpers: [src/library/cover.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/library/cover.rs)
-- Online backend: [src/library/online.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/library/online.rs)
-- Storage: [src/library/database.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/library/database.rs)
-- Settings paths: [src/util/paths.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/util/paths.rs)
-- Toast escaping: [src/util/errors.rs](/home/kampos/Desarrollo_Software/KAMUSIC/src/util/errors.rs)
-- Snap config: [snap/snapcraft.yaml](/home/kampos/Desarrollo_Software/KAMUSIC/snap/snapcraft.yaml)
-- Snap launcher: [snap/command-chain/desktop-launch](/home/kampos/Desarrollo_Software/KAMUSIC/snap/command-chain/desktop-launch)
+2. `src/ui/window.rs`
+   - Se anadio boton de minimizar reproductor junto al boton de cerrar.
+   - Se creo una vista compacta en un `gtk::Stack`.
+   - La vista compacta muestra portada, titulo de la reproduccion, boton restaurar, play, pausa y selector de playlists/carpetas.
+   - La vista compacta es arrastrable desde la portada.
+   - El boton restaurar vuelve a la vista completa y recupera el tamano normal guardado.
+   - Se evita guardar el tamano compacto como tamano normal de ventana.
+   - Se anadio `render_compact_playlists` para listar playlists/carpetas en el menu compacto.
+   - Se reutiliza la logica existente de reproduccion para play, pausa y seleccion de playlist desde el modo compacto.
+   - Se corrigio que el gesto de arrastre interceptara clics del boton restaurar.
+   - Se reemplazaron iconos simbolicos dependientes del tema por assets empaquetados.
 
-## Verified Commands
+3. `data/icons/restore.svg`
+   - Nuevo icono local para el boton de restaurar en modo compacto.
 
-- `CARGO_HOME=/tmp/cargo cargo check`
-- `CARGO_HOME=/tmp/cargo cargo build --release`
-- `glib-compile-schemas prime/usr/share/glib-2.0/schemas`
-- `snap pack prime /tmp --filename=kamusic_0.1.11_amd64.snap`
-- `snap info /tmp/kamusic_0.1.11_amd64.snap`
+4. `data/icons/minimize.svg`
+   - Nuevo icono local para el boton de minimizar reproductor.
 
-## Runtime Notes
+5. `snap/snapcraft.yaml`
+   - Version actualizada primero a `0.1.32` para publicar el modo compacto.
+   - Version actualizada despues a `0.1.33` para corregir el icono de restaurar en el snap instalado.
 
-- The installed snap revision in the user machine can still lag behind the freshly built artifact.
-- Current snap artifacts present in the repo root:
-  - `kamusic_0.1.11_amd64.snap`
-  - older revisions from `0.1.0` through `0.1.10`
-- In the snap environment, the following warnings were seen repeatedly:
-  - `Gdk-WARNING ... ListActivatableNames ... AccessDenied`
-  - `GLib-GIO-WARNING ... /proc/self/mountinfo: Permission denied`
-- The app is now set up to avoid the earlier GSettings abort by shipping compiled schemas.
-- YouTube playback previously failed because `rustube` broke against the current YouTube response; the current code no longer depends on it.
+## Verificaciones Realizadas
+- `cargo fmt --check`: correcto.
+- `cargo check`: correcto.
+- `cargo run`: la app compilo y arranco correctamente durante las pruebas locales.
+- `snapcraft --destructive-mode`: correcto para `kamusic_0.1.32_amd64.snap`.
+- `snapcraft upload --release=stable kamusic_0.1.32_amd64.snap`: correcto, revision 29 publicada en `stable`.
+- `snapcraft --destructive-mode`: correcto para `kamusic_0.1.33_amd64.snap`.
+- Durante la build `0.1.33`, Snapcraft confirmo la instalacion de:
+  - `data/icons/minimize.svg`
+  - `data/icons/restore.svg`
+- `snapcraft upload --release=stable kamusic_0.1.33_amd64.snap`: correcto, revision 30 publicada en `stable`.
 
-## Known Gaps / Next Work
+## Avisos Observados
+- `cargo check` mantiene warnings no bloqueantes ya existentes:
+  - `audio_sink` y `video_sink` en `GstBackend`.
+  - `video_paintable` en backend/player.
+- Snapcraft mantiene warnings de linters sobre librerias GPU y librerias no usadas. No bloquearon el empaquetado ni la publicacion.
+- En snaps instalados, no conviene depender de iconos GTK simbolicos por nombre (`view-restore-symbolic`, `window-minimize-symbolic`, etc.). Se sustituyeron por SVGs locales empaquetados.
+- GTK4 no ofrece una API portable para guardar/restaurar coordenadas X/Y exactas de ventana en todos los gestores, especialmente Wayland. El modo compacto queda arrastrable y conserva el estado compacto, pero no persiste una posicion exacta portable.
 
-- We still need a real end-to-end test of YouTube playback inside the current snap revision `0.1.11`.
-- The scan/index pipeline still uses a simple full refresh instead of incremental diffs.
-- Track duration, progress bar, and seek support are not fully implemented.
-- The queue UI is still basic and not exposed as a dedicated panel.
-- Embedded cover-art extraction from audio tags is not implemented yet.
-- Radio selection works, but the information panel can still be refined further.
+## Puntos de Continuacion
+1. Instalar desde Store y validar que la version `0.1.33` muestra el icono de restaurar:
+   - `sudo snap refresh kamusic --stable`
+   - o `sudo snap install kamusic --stable`
+2. Probar en el snap instalado:
+   - Boton minimizar reproductor.
+   - Boton restaurar en modo compacto.
+   - Play y pausa desde modo compacto.
+   - Selector de playlists/carpetas desde modo compacto.
+3. Considerar limpiar warnings de `video_paintable` si no se usara la vista de video.
+4. Revisar warnings de Snapcraft si se quiere reducir tamano del snap o ajustar soporte GPU mediante content interfaces.
 
-## Safe Next Steps
+---
 
-1. Install and run `kamusic_0.1.11_amd64.snap` and verify YouTube playback with a known working video.
-2. Confirm the local library still scans `~/Música` automatically inside the snap.
-3. If YouTube still fails, inspect the exact `stream_url` returned by Invidious and whether GStreamer accepts it.
-4. Add seek/progress updates from GStreamer bus and expose the timeline in the player bar.
-5. Improve metadata extraction and embedded cover-art support.
+Fecha: 2026-06-10 12:55 CEST
+
+## Estado Actual
+- La reproduccion continua esta implementada para la cola local/favoritos y para la cola online/radio.
+- Al terminar una pista, GStreamer emite EOS, la UI recibe `PlayerEvent::EndOfStream` y reutiliza `play_next_active`.
+- Si no hay siguiente elemento, la app detiene el reproductor, marca `is_playing = false`, limpia `current_index` y actualiza MPRIS como detenido.
+- Snap generado y publicado en Ubuntu Store:
+  - Archivo local: `kamusic_0.1.30_amd64.snap`
+  - Tamano: 217 MB
+  - Canal: `stable`
+  - Revision Store: 27
+  - Mensaje de Snapcraft: `Revision 27 created for 'kamusic' and released to 'stable'`
+
+## Cambios Realizados
+1. `src/audio/player.rs`
+   - Se anadio `PlayerEvent`.
+   - Se anadio `Player::new_with_events(Sender<PlayerEvent>)`.
+   - Se retiro el constructor sin eventos porque ya no se usa.
+
+2. `src/audio/gst_backend.rs`
+   - `GstBackend::new` ahora acepta `Option<Sender<PlayerEvent>>`.
+   - El `BusWatchGuard` envia `PlayerEvent::EndOfStream` al recibir `MessageView::Eos`.
+
+3. `src/ui/window.rs`
+   - Se crea un canal `mpsc` para eventos del reproductor.
+   - La ventana crea el reproductor con `Player::new_with_events`.
+   - Se anadio un `glib::timeout_add_local` cada 120 ms para consumir eventos del reproductor en el hilo GTK.
+   - EOS llama a `play_next_active`, igual que el boton Siguiente y MPRIS Next.
+   - `play_next_active` comprueba si existe siguiente elemento antes de reproducir.
+   - Se anadio `finish_playback` para cerrar correctamente el fin de cola.
+
+4. `snap/snapcraft.yaml`
+   - Version del snap actualizada de `0.1.29` a `0.1.30`.
+
+## Verificaciones Realizadas
+- `cargo fmt --check`: correcto.
+- `cargo check`: correcto.
+- `snapcraft`: correcto, genero `kamusic_0.1.30_amd64.snap`.
+- `snapcraft whoami`: sesion activa como `kampos.info@gmail.com` con permisos de push/release.
+- `snapcraft upload --release=stable kamusic_0.1.30_amd64.snap`: correcto, revision 27 publicada en `stable`.
+
+## Avisos Observados
+- `cargo check` deja warnings no bloqueantes de codigo no usado:
+  - `audio_sink` y `video_sink` en `GstBackend`.
+  - `video_paintable` en backend/player.
+- Snapcraft dejo warnings de linters sobre librerias GPU y librerias no usadas. No bloquearon el paquete ni la publicacion.
+- `snap info kamusic` se quedo colgado al consultar la Store tras publicar. Se termino el proceso colgado; la publicacion ya estaba confirmada por `snapcraft upload`.
+
+## Puntos de Continuacion
+1. Probar desde Store en una maquina limpia: `sudo snap install kamusic`.
+2. Validar reproduccion continua en:
+   - Biblioteca local completa.
+   - Carpeta/playlist seleccionada desde la barra lateral.
+   - Favoritos.
+   - Radio/online, si aplica.
+3. Considerar limpiar warnings de `video_paintable` si ya no se usa o reconectarlo si la vista de video sigue siendo necesaria.
+4. Revisar los warnings de Snapcraft si se quiere reducir tamano del snap o ajustar soporte GPU con content interfaces.
