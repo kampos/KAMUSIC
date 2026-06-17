@@ -13,7 +13,6 @@ KAMUSIC es un reproductor de musica local para Ubuntu/GNOME creado con Rust, GTK
 - Controles de reproducir, pausar, detener, anterior, siguiente y volumen.
 - Caratulas por archivos `cover`, `folder`, `front` o `album` en la misma carpeta.
 - Indice SQLite local y configuracion JSON en rutas XDG.
-- Archivos iniciales para empaquetado Snap.
 
 ## Dependencias de desarrollo en Ubuntu 26.04
 
@@ -29,19 +28,6 @@ cargo run
 ```
 
 Al abrir la app, usa `Escanear musica` para intentar cargar la carpeta XDG de musica o `Seleccionar carpeta` para elegir una ruta manualmente.
-
-## Empaquetar como Snap
-
-```bash
-snapcraft
-sudo snap install kamusic_*.snap --dangerous
-```
-
-Para musica en discos externos puede ser necesario conectar la interfaz `removable-media`:
-
-```bash
-sudo snap connect kamusic:removable-media
-```
 
 ## Datos locales
 
