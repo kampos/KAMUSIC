@@ -1885,7 +1885,13 @@ impl MainWindow {
                         }
 
                         if count == 0 {
-                            if let Some(root) = preferred_music_dir(&state.borrow().settings) {
+                            // Do not keep the immutable Ref alive while mutating `state`.
+                            // This path is used on a fresh installation (empty library).
+                            let preferred_root = {
+                                let state_ref = state.borrow();
+                                preferred_music_dir(&state_ref.settings)
+                            };
+                            if let Some(root) = preferred_root {
                                 {
                                     let mut state_mut = state.borrow_mut();
                                     state_mut.settings.last_music_dir = Some(root.clone());
